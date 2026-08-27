@@ -28,6 +28,30 @@ function requiredText(max: number, label: string) {
     .max(max, `${label} must be ${max} characters or fewer`);
 }
 
+/**
+ * A profile photo arrives as a base64 data URL. These bounds mirror the API's
+ * Pydantic rules so a bad image is caught before the round trip.
+ */
+export const PHOTO_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
+export const MAX_PHOTO_BYTES = 2 * 1024 * 1024; // 2 MB decoded image
+const MAX_PHOTO_LENGTH = 2_800_000; // ~2 MB once base64-encoded
+const PHOTO_DATA_URL = /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/;
+
+const photoField = z
+  .string()
+  .trim()
+  .transform((value) => value || null)
+  .nullable()
+  .default(null)
+  .refine(
+    (value) => value === null || value.length <= MAX_PHOTO_LENGTH,
+    "Image is too large — use one under 2 MB",
+  )
+  .refine(
+    (value) => value === null || PHOTO_DATA_URL.test(value),
+    "Photo must be a PNG, JPEG, GIF, or WebP image",
+  );
+
 export const contactInputSchema = z.object({
   first_name: requiredText(100, "First name"),
   last_name: requiredText(100, "Last name"),
@@ -52,6 +76,7 @@ export const contactInputSchema = z.object({
     .transform((value) => value || null)
     .nullable()
     .default(null),
+  photo: photoField,
 }) satisfies z.ZodType<ContactInput, unknown>;
 
 export type ContactFormValues = z.input<typeof contactInputSchema>;
@@ -218,10 +243,14 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
 export function formDataToValues(
   formData: FormData,
 ): Record<keyof ContactInput, string> {
-  return Object.fromEntries(
+  const values = Object.fromEntries(
     CONTACT_FIELDS.map((field) => [
       field.name,
       String(formData.get(field.name) ?? ""),
     ]),
   ) as Record<keyof ContactInput, string>;
+  // `photo` is carried by a dedicated picker, not a text Field, but it still
+  // rides along in the form data — including on edit, so a PUT never wipes it.
+  values.photo = String(formData.get("photo") ?? "");
+  return values;
 }
