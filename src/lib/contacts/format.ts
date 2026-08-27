@@ -1,4 +1,4 @@
-import type { Contact } from "./types";
+import type { Address, Contact } from "./types";
 
 /** Presentation helpers shared by the list, the detail page, and the cards. */
 
@@ -44,13 +44,24 @@ export function jobLine(contact: Contact): string | null {
 }
 
 /** Single-line postal address, skipping the parts that are not filled in. */
-export function addressLine(contact: Contact): string | null {
+export function addressLine(address: Address): string | null {
   const parts = [
-    contact.address,
-    contact.city,
-    [contact.state, contact.postal_code].filter(Boolean).join(" "),
-    contact.country,
+    address.street,
+    address.city,
+    [address.state, address.postal_code].filter(Boolean).join(" "),
+    address.country,
   ].filter((part): part is string => Boolean(part && part.trim()));
 
   return parts.length ? parts.join(", ") : null;
+}
+
+/**
+ * A contact's addresses in a stable display order — Home, then Work, then Other
+ * — so the detail page reads the same way for everyone regardless of insert order.
+ */
+export function addressesByType(contact: Contact): Address[] {
+  const rank = { Home: 0, Work: 1, Other: 2 };
+  return [...contact.addresses].sort(
+    (a, b) => rank[a.type] - rank[b.type] || a.id - b.id,
+  );
 }

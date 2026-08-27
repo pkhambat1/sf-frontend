@@ -1,6 +1,7 @@
 import {
   CONTACT_FIELDS,
   contactInputSchema,
+  formDataToAddresses,
   formDataToValues,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
@@ -13,11 +14,6 @@ function values(overrides: Record<string, string> = {}) {
     phone: "",
     company: "",
     job_title: "",
-    address: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
     notes: "",
     photo: "",
     ...overrides,
@@ -77,13 +73,100 @@ describe("contactInputSchema", () => {
 
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
-      values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
+      values({ first_name: "a".repeat(101), company: "c".repeat(201) }),
     );
 
     expect(zodFieldErrors(result.error!)).toEqual({
       first_name: "First name must be 100 characters or fewer",
-      postal_code: "Postal code must be 20 characters or fewer",
+      company: "Company must be 200 characters or fewer",
     });
+  });
+
+  it("defaults to no addresses and accepts a list of them", () => {
+    expect(contactInputSchema.parse(values()).addresses).toEqual([]);
+
+    const parsed = contactInputSchema.parse({
+      ...values(),
+      addresses: [
+        { type: "Work", street: "1 Market St", city: "San Francisco", state: "CA", postal_code: "94105", country: "USA" },
+        { type: "Home", street: "", city: "London", state: "", postal_code: "", country: "UK" },
+      ],
+    });
+
+    expect(parsed.addresses).toHaveLength(2);
+    expect(parsed.addresses[0].type).toBe("Work");
+    // Blank parts become null, matching how the API clears a field.
+    expect(parsed.addresses[1].street).toBeNull();
+  });
+
+  it("rejects an address type the API does not accept", () => {
+    const result = contactInputSchema.safeParse({
+      ...values(),
+      addresses: [{ type: "Vacation", street: "", city: "Nice", state: "", postal_code: "", country: "FR" }],
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("formDataToAddresses", () => {
+  function rowsInto(formData: FormData, rows: Record<string, string>[]) {
+    for (const row of rows) {
+      for (const part of ["id", "type", "street", "city", "state", "postal_code", "country"]) {
+        formData.append(`address_${part}`, row[part] ?? "");
+      }
+    }
+    return formData;
+  }
+
+  it("zips the repeated inputs back into rows, in order", () => {
+    const formData = rowsInto(new FormData(), [
+      { type: "Work", street: "1 Market St", city: "San Francisco" },
+      { type: "Home", city: "London", country: "UK" },
+    ]);
+
+    expect(formDataToAddresses(formData)).toEqual([
+      { type: "Work", street: "1 Market St", city: "San Francisco", state: null, postal_code: null, country: null },
+      { type: "Home", street: null, city: "London", state: null, postal_code: null, country: "UK" },
+    ]);
+  });
+
+  it("keeps two rows that share a type", () => {
+    const formData = rowsInto(new FormData(), [
+      { type: "Work", city: "San Francisco" },
+      { type: "Work", city: "New York" },
+    ]);
+
+    expect(formDataToAddresses(formData).map((a) => a.city)).toEqual([
+      "San Francisco",
+      "New York",
+    ]);
+  });
+
+  it("drops a new row the user added but never filled in", () => {
+    const formData = rowsInto(new FormData(), [
+      { type: "Work", city: "San Francisco" },
+      { type: "Home" },
+    ]);
+
+    expect(formDataToAddresses(formData)).toHaveLength(1);
+  });
+
+  it("keeps a stored address even when every field is blank", () => {
+    // Saving is a full-replacement PUT, so dropping this row would delete it.
+    const formData = rowsInto(new FormData(), [
+      { type: "Work", city: "San Francisco" },
+      { type: "Home", id: "7" },
+    ]);
+
+    expect(formDataToAddresses(formData).map((a) => a.type)).toEqual([
+      "Work",
+      "Home",
+    ]);
+  });
+
+  it("returns nothing when the form has no address rows", () => {
+    expect(formDataToAddresses(new FormData())).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ContactInput } from "./types";
+import { ADDRESS_TYPES, type AddressInput, type ContactInput, type ContactTextField } from "./types";
 
 /**
  * Client/server-shared validation for the contact form.
@@ -54,6 +54,15 @@ const photoField = z
     (value) => value === null || PHOTO_DATA_URL.test(value),
     "Photo must be a PNG, JPEG, GIF, or WebP image",
   );
+/** One address row. Mirrors the API's `AddressCreate`. */
+export const addressInputSchema = z.object({
+  type: z.enum(ADDRESS_TYPES),
+  street: optionalText(300, "Street address"),
+  city: optionalText(120, "City"),
+  state: optionalText(120, "State"),
+  postal_code: optionalText(20, "Postal code"),
+  country: optionalText(120, "Country"),
+}) satisfies z.ZodType<AddressInput, unknown>;
 
 export const contactInputSchema = z.object({
   first_name: requiredText(100, "First name"),
@@ -68,11 +77,7 @@ export const contactInputSchema = z.object({
   phone: optionalText(40, "Phone"),
   company: optionalText(200, "Company"),
   job_title: optionalText(200, "Job title"),
-  address: optionalText(300, "Address"),
-  city: optionalText(120, "City"),
-  state: optionalText(120, "State"),
-  postal_code: optionalText(20, "Postal code"),
-  country: optionalText(120, "Country"),
+  addresses: z.array(addressInputSchema).default([]),
   notes: z
     .string()
     .trim()
@@ -87,12 +92,12 @@ export type ContactFormValues = z.input<typeof contactInputSchema>;
 /** Collapse a ZodError into one message per field, keyed by input name. */
 export function zodFieldErrors(
   error: z.ZodError,
-): Partial<Record<keyof ContactInput, string>> {
-  const fieldErrors: Partial<Record<keyof ContactInput, string>> = {};
+): Partial<Record<ContactTextField, string>> {
+  const fieldErrors: Partial<Record<ContactTextField, string>> = {};
   for (const issue of error.issues) {
     const key = issue.path[0];
-    if (typeof key === "string" && !(key in fieldErrors)) {
-      fieldErrors[key as keyof ContactInput] = issue.message;
+    if (typeof key === "string" && key !== "addresses" && !(key in fieldErrors)) {
+      fieldErrors[key as ContactTextField] = issue.message;
     }
   }
   return fieldErrors;
@@ -103,7 +108,7 @@ export function zodFieldErrors(
 /* ------------------------------------------------------------------ */
 
 export interface ContactFieldSpec {
-  name: keyof ContactInput;
+  name: ContactTextField;
   label: string;
   type?: "text" | "email" | "tel" | "textarea";
   required?: boolean;
@@ -181,48 +186,6 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
     ],
   },
   {
-    title: "Address",
-    description: "Optional postal details.",
-    fields: [
-      {
-        name: "address",
-        label: "Street address",
-        maxLength: 300,
-        placeholder: "1 Market St, Suite 400",
-        autoComplete: "street-address",
-        wide: true,
-      },
-      {
-        name: "city",
-        label: "City",
-        maxLength: 120,
-        placeholder: "San Francisco",
-        autoComplete: "address-level2",
-      },
-      {
-        name: "state",
-        label: "State / region",
-        maxLength: 120,
-        placeholder: "CA",
-        autoComplete: "address-level1",
-      },
-      {
-        name: "postal_code",
-        label: "Postal code",
-        maxLength: 20,
-        placeholder: "94105",
-        autoComplete: "postal-code",
-      },
-      {
-        name: "country",
-        label: "Country",
-        maxLength: 120,
-        placeholder: "USA",
-        autoComplete: "country-name",
-      },
-    ],
-  },
-  {
     title: "Notes",
     description: "Anything worth remembering. No length limit.",
     fields: [
@@ -242,18 +205,58 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
   (group) => group.fields,
 );
 
-/** Pull the contact fields out of a submitted form, as raw strings. */
+/** Pull the plain text contact fields out of a submitted form, as raw strings. */
 export function formDataToValues(
   formData: FormData,
-): Record<keyof ContactInput, string> {
+): Record<ContactTextField, string> {
   const values = Object.fromEntries(
     CONTACT_FIELDS.map((field) => [
       field.name,
       String(formData.get(field.name) ?? ""),
     ]),
-  ) as Record<keyof ContactInput, string>;
+  ) as Record<ContactTextField, string>;
   // `photo` is carried by a dedicated picker, not a text Field, but it still
   // rides along in the form data — including on edit, so a PUT never wipes it.
   values.photo = String(formData.get("photo") ?? "");
   return values;
+}
+
+/** The address inputs are repeated once per row, so each part arrives as a list. */
+const ADDRESS_PARTS = ["id", "type", "street", "city", "state", "postal_code", "country"] as const;
+const ADDRESS_TEXT_PARTS = ["street", "city", "state", "postal_code", "country"] as const;
+
+/**
+ * Rebuild the address rows from a submitted form.
+ *
+ * Each row renders one input per part under the same name, so `getAll` returns
+ * them in document order and index `i` of every list belongs to row `i`.
+ *
+ * A row is dropped only when it is *new* and entirely blank — the case where the
+ * user clicked "Add address" and then ignored it. A row carrying an id is an
+ * address the API already stores, so it is kept even when every postal field is
+ * empty; saving is a full-replacement PUT, and dropping it here would delete it.
+ */
+export function formDataToAddresses(formData: FormData): AddressInput[] {
+  const columns = Object.fromEntries(
+    ADDRESS_PARTS.map((part) => [part, formData.getAll(`address_${part}`).map(String)]),
+  ) as Record<(typeof ADDRESS_PARTS)[number], string[]>;
+
+  return columns.type
+    .map((_, row) =>
+      Object.fromEntries(ADDRESS_PARTS.map((part) => [part, columns[part][row] ?? ""])),
+    )
+    .filter(
+      (row) =>
+        row.id?.trim() || ADDRESS_TEXT_PARTS.some((part) => row[part]?.trim()),
+    )
+    .map((row) => ({
+      type: (ADDRESS_TYPES as readonly string[]).includes(row.type)
+        ? (row.type as AddressInput["type"])
+        : "Home",
+      street: row.street?.trim() || null,
+      city: row.city?.trim() || null,
+      state: row.state?.trim() || null,
+      postal_code: row.postal_code?.trim() || null,
+      country: row.country?.trim() || null,
+    }));
 }
