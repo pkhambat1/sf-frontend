@@ -6,6 +6,31 @@ page through, create, edit, and delete contacts.
 Next.js 16 (App Router) · TypeScript · Tailwind CSS · Zod · Jest + Testing Library
 + MSW · Playwright.
 
+## Screenshots
+
+### Contact detail — circular photo, and many addresses
+
+A contact carries an optional profile photo, shown as a circular avatar, and as
+many addresses as it needs, each tagged Home, Work, or Other. Addresses render in
+a stable Home → Work → Other order, so the page reads the same regardless of the
+order they were entered.
+
+![Contact detail showing a circular profile photo and both a Home and a Work address](docs/screenshots/contact-detail.png)
+
+### List — photos, with initials as the fallback
+
+Contacts with a photo show it; contacts without one keep the original initials
+bubble, tinted with a hue derived from their email.
+
+![Contacts list showing one contact with a photo and two with initials avatars](docs/screenshots/contacts-list.png)
+
+### Edit — photo picker and the address rows
+
+Large photos are scaled down to a 512px avatar before they are submitted, and
+addresses are added and removed as rows, each with its own type.
+
+![Edit form showing the photo picker with a live preview, and two address rows with type selectors](docs/screenshots/contact-edit.png)
+
 ## Getting started
 
 ```bash
