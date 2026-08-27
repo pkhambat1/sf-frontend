@@ -26,6 +26,12 @@ async function toAvatarDataUrl(file: File): Promise<string> {
 
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas is unavailable");
+
+    // PNG and WebP can carry alpha and JPEG cannot, so a transparent image would
+    // encode its clear pixels as black. Composite onto white first — the avatar
+    // then reads the same as it would on any light surface.
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
     context.drawImage(bitmap, 0, 0, width, height);
 
     return canvas.toDataURL("image/jpeg", 0.85);
