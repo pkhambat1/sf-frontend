@@ -32,8 +32,10 @@ describe("ContactForm", () => {
 
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Ada");
     expect(screen.getByLabelText(/^email/i)).toHaveValue("ada@example.com");
+    // The contact's one address is rendered as a row, prefilled from the API.
+    expect(screen.getByLabelText(/address 1 city/i)).toHaveValue("San Francisco");
     // Nulls become empty inputs rather than the string "null".
-    expect(screen.getByLabelText(/street address/i)).toHaveValue("");
+    expect(screen.getByLabelText(/address 1 street/i)).toHaveValue("");
   });
 
   it("submits the entered values to the action", async () => {
