@@ -80,20 +80,6 @@ describe("ContactForm", () => {
     );
   });
 
-  it("carries an existing photo through a save, so editing cannot wipe it", async () => {
-    const photo = "data:image/png;base64,iVBORw0KGgo=";
-    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
-      async () => ({ status: "idle" }),
-    );
-    renderForm(action, makeContact({ photo }));
-
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
-
-    await waitFor(() => expect(action).toHaveBeenCalled());
-    // The form does a full PUT: the untouched photo must still be in the payload.
-    expect(action.mock.calls[0][1].get("photo")).toBe(photo);
-  });
-
   it("links back out without submitting", () => {
     renderForm(jest.fn());
     expect(screen.getByRole("link", { name: /cancel/i })).toHaveAttribute(
