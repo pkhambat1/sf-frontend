@@ -19,13 +19,9 @@ function values(overrides: Record<string, string> = {}) {
     postal_code: "",
     country: "",
     notes: "",
-    photo: "",
     ...overrides,
   };
 }
-
-const PHOTO =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 
 describe("contactInputSchema", () => {
   it("lowercases the email and nulls out the blanks", () => {
@@ -60,21 +56,6 @@ describe("contactInputSchema", () => {
     expect(zodFieldErrors(result.error!).email).toBe("Enter a valid email address");
   });
 
-  it("keeps a valid photo data URL and nulls a blank one", () => {
-    expect(contactInputSchema.parse(values({ photo: PHOTO })).photo).toBe(PHOTO);
-    expect(contactInputSchema.parse(values()).photo).toBeNull();
-  });
-
-  it("rejects a photo that is not an image data URL", () => {
-    const result = contactInputSchema.safeParse(
-      values({ photo: "https://example.com/avatar.png" }),
-    );
-
-    expect(zodFieldErrors(result.error!).photo).toBe(
-      "Photo must be a PNG, JPEG, GIF, or WebP image",
-    );
-  });
-
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
       values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
@@ -98,9 +79,8 @@ describe("formDataToValues", () => {
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
-    // `photo` rides along in the form data even though it is not a text Field.
     expect(Object.keys(extracted).sort()).toEqual(
-      [...CONTACT_FIELDS.map((field) => field.name), "photo"].sort(),
+      CONTACT_FIELDS.map((field) => field.name).sort(),
     );
   });
 });
