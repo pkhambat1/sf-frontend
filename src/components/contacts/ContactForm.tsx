@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
@@ -20,11 +20,11 @@ export type ContactFormAction = (
   formData: FormData,
 ) => Promise<FormState>;
 
-function SubmitButton({ label }: { label: string }) {
+function SubmitButton({ label, disabled }: { label: string; disabled?: boolean }) {
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" disabled={pending}>
+    <Button type="submit" disabled={pending || disabled}>
       {pending ? (
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
       ) : null}
@@ -50,6 +50,9 @@ export default function ContactForm({
   cancelHref: string;
 }) {
   const [state, formAction] = useActionState(action, EMPTY_FORM_STATE);
+  // A picked image is still being scaled down; saving now would submit the
+  // previous photo, so hold the submit until it lands.
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   function valueFor(name: keyof ContactInput): string {
     return state.values?.[name] ?? contact?.[name] ?? "";
@@ -86,6 +89,7 @@ export default function ContactForm({
         <PhotoField
           defaultPhoto={state.values?.photo ?? contact?.photo ?? null}
           error={state.fieldErrors?.photo}
+          onBusyChange={setPhotoBusy}
         />
       </fieldset>
 
@@ -116,7 +120,7 @@ export default function ContactForm({
       ))}
 
       <div className="flex items-center gap-2 border-t border-hairline pt-4">
-        <SubmitButton label={submitLabel} />
+        <SubmitButton label={submitLabel} disabled={photoBusy} />
         <Link href={cancelHref} className={buttonClasses("secondary")}>
           Cancel
         </Link>

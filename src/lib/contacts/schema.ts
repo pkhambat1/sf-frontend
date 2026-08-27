@@ -33,7 +33,10 @@ function requiredText(max: number, label: string) {
  * Pydantic rules so a bad image is caught before the round trip.
  */
 export const PHOTO_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
-export const MAX_PHOTO_BYTES = 2 * 1024 * 1024; // 2 MB decoded image
+/** Longest edge of the stored avatar; larger images are scaled down to fit. */
+export const AVATAR_MAX_PX = 512;
+/** Upper bound on the file a user may pick, before it is scaled down. */
+export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const MAX_PHOTO_LENGTH = 2_800_000; // ~2 MB once base64-encoded
 const PHOTO_DATA_URL = /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/;
 

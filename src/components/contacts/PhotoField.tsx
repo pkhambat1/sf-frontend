@@ -1,18 +1,37 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
-import { MAX_PHOTO_BYTES, PHOTO_MIME_TYPES } from "@/lib/contacts/schema";
+import { AVATAR_MAX_PX, MAX_PHOTO_BYTES, PHOTO_MIME_TYPES } from "@/lib/contacts/schema";
 
-/** Read a file into a base64 data URL. */
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
+/**
+ * Decode an image file and re-encode it as an avatar-sized JPEG data URL.
+ *
+ * Downscaling here rather than storing the original matters twice over: a phone
+ * photo base64-encodes to several MB, which both bloats the in-memory store and
+ * overruns the 1 MB body limit Next.js puts on Server Actions — the request
+ * would 413 before the form's own validation ever ran.
+ */
+async function toAvatarDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, AVATAR_MAX_PX / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is unavailable");
+    context.drawImage(bitmap, 0, 0, width, height);
+
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } finally {
+    bitmap.close();
+  }
 }
 
 /**
@@ -24,14 +43,26 @@ function readAsDataUrl(file: File): Promise<string> {
 export default function PhotoField({
   defaultPhoto,
   error,
+  onBusyChange,
 }: {
   defaultPhoto?: string | null;
   error?: string;
+  /** Lets the form block a submit while an image is still being processed. */
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const inputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
+  // Bumped on every pick and on removal, so a slow decode that finishes after a
+  // newer pick — or after the photo was removed — is discarded instead of applied.
+  const pickSeq = useRef(0);
   const [photo, setPhoto] = useState<string | null>(defaultPhoto ?? null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function setBusyState(next: boolean) {
+    setBusy(next);
+    onBusyChange?.(next);
+  }
 
   async function onPick(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -42,17 +73,31 @@ export default function PhotoField({
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      setLocalError("That image is over 2 MB — pick a smaller one.");
+      setLocalError("That image is over 10 MB — pick a smaller one.");
       return;
     }
 
+    const seq = ++pickSeq.current;
     setLocalError(null);
-    setPhoto(await readAsDataUrl(file));
+    setBusyState(true);
+
+    try {
+      const dataUrl = await toAvatarDataUrl(file);
+      if (seq !== pickSeq.current) return; // superseded by a later pick or a removal
+      setPhoto(dataUrl);
+    } catch {
+      if (seq !== pickSeq.current) return;
+      setLocalError("That image could not be read. Try another file.");
+    } finally {
+      if (seq === pickSeq.current) setBusyState(false);
+    }
   }
 
   function onRemove() {
+    pickSeq.current += 1; // invalidate any decode still in flight
     setPhoto(null);
     setLocalError(null);
+    setBusyState(false);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -62,7 +107,14 @@ export default function PhotoField({
     <div className="flex items-center gap-4">
       <input type="hidden" name="photo" value={photo ?? ""} />
 
-      {photo ? (
+      {busy ? (
+        <span
+          aria-hidden="true"
+          className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground"
+        >
+          <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.5} />
+        </span>
+      ) : photo ? (
         // eslint-disable-next-line @next/next/no-img-element -- base64 data URL, no loader needed
         <img
           src={photo}
@@ -80,10 +132,14 @@ export default function PhotoField({
 
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <label htmlFor={inputId} className={`${buttonClasses("secondary")} cursor-pointer`}>
-            {photo ? "Change photo" : "Upload photo"}
+          <label
+            htmlFor={inputId}
+            aria-disabled={busy}
+            className={`${buttonClasses("secondary")} ${busy ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
+          >
+            {busy ? "Processing…" : photo ? "Change photo" : "Upload photo"}
           </label>
-          {photo ? (
+          {photo && !busy ? (
             <button type="button" onClick={onRemove} className={buttonClasses("ghost")}>
               <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
               Remove
@@ -91,7 +147,8 @@ export default function PhotoField({
           ) : null}
         </div>
         <p className={message ? "text-[13px] text-destructive" : "text-[13px] text-muted-foreground"}>
-          {message ?? "PNG, JPEG, GIF, or WebP · up to 2 MB. Falls back to initials."}
+          {message ??
+            "PNG, JPEG, GIF, or WebP. Large photos are scaled down to avatar size."}
         </p>
       </div>
 
