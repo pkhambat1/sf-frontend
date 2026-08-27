@@ -222,15 +222,19 @@ export function formDataToValues(
 }
 
 /** The address inputs are repeated once per row, so each part arrives as a list. */
-const ADDRESS_PARTS = ["type", "street", "city", "state", "postal_code", "country"] as const;
+const ADDRESS_PARTS = ["id", "type", "street", "city", "state", "postal_code", "country"] as const;
+const ADDRESS_TEXT_PARTS = ["street", "city", "state", "postal_code", "country"] as const;
 
 /**
  * Rebuild the address rows from a submitted form.
  *
  * Each row renders one input per part under the same name, so `getAll` returns
- * them in document order and index `i` of every list belongs to row `i`. Rows
- * where every postal field is blank are dropped, so an untouched empty row the
- * user added and then ignored does not become a meaningless address.
+ * them in document order and index `i` of every list belongs to row `i`.
+ *
+ * A row is dropped only when it is *new* and entirely blank — the case where the
+ * user clicked "Add address" and then ignored it. A row carrying an id is an
+ * address the API already stores, so it is kept even when every postal field is
+ * empty; saving is a full-replacement PUT, and dropping it here would delete it.
  */
 export function formDataToAddresses(formData: FormData): AddressInput[] {
   const columns = Object.fromEntries(
@@ -241,7 +245,10 @@ export function formDataToAddresses(formData: FormData): AddressInput[] {
     .map((_, row) =>
       Object.fromEntries(ADDRESS_PARTS.map((part) => [part, columns[part][row] ?? ""])),
     )
-    .filter((row) => ADDRESS_PARTS.some((part) => part !== "type" && row[part]?.trim()))
+    .filter(
+      (row) =>
+        row.id?.trim() || ADDRESS_TEXT_PARTS.some((part) => row[part]?.trim()),
+    )
     .map((row) => ({
       type: (ADDRESS_TYPES as readonly string[]).includes(row.type)
         ? (row.type as AddressInput["type"])

@@ -112,7 +112,7 @@ describe("contactInputSchema", () => {
 describe("formDataToAddresses", () => {
   function rowsInto(formData: FormData, rows: Record<string, string>[]) {
     for (const row of rows) {
-      for (const part of ["type", "street", "city", "state", "postal_code", "country"]) {
+      for (const part of ["id", "type", "street", "city", "state", "postal_code", "country"]) {
         formData.append(`address_${part}`, row[part] ?? "");
       }
     }
@@ -143,13 +143,26 @@ describe("formDataToAddresses", () => {
     ]);
   });
 
-  it("drops a row the user added but never filled in", () => {
+  it("drops a new row the user added but never filled in", () => {
     const formData = rowsInto(new FormData(), [
       { type: "Work", city: "San Francisco" },
       { type: "Home" },
     ]);
 
     expect(formDataToAddresses(formData)).toHaveLength(1);
+  });
+
+  it("keeps a stored address even when every field is blank", () => {
+    // Saving is a full-replacement PUT, so dropping this row would delete it.
+    const formData = rowsInto(new FormData(), [
+      { type: "Work", city: "San Francisco" },
+      { type: "Home", id: "7" },
+    ]);
+
+    expect(formDataToAddresses(formData).map((a) => a.type)).toEqual([
+      "Work",
+      "Home",
+    ]);
   });
 
   it("returns nothing when the form has no address rows", () => {

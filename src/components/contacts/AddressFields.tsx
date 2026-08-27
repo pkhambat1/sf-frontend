@@ -17,13 +17,23 @@ const EMPTY: AddressInput = {
   country: null,
 };
 
-/** Rows carry a key so React keeps inputs stable as rows are added and removed. */
+/**
+ * Rows carry a key so React keeps inputs stable as rows are added and removed,
+ * and the stored `id` of the address they came from — `null` for a row the user
+ * just added. That id is what tells a blank-but-saved address apart from a blank
+ * new row when the form is serialised.
+ */
 interface Row extends AddressInput {
   key: number;
+  id: number | null;
 }
 
-function toRows(addresses: AddressInput[]): Row[] {
-  return addresses.map((address, index) => ({ ...address, key: index }));
+function toRows(addresses: (AddressInput & { id?: number })[]): Row[] {
+  return addresses.map((address, index) => ({
+    ...address,
+    id: address.id ?? null,
+    key: index,
+  }));
 }
 
 /**
@@ -42,7 +52,7 @@ export default function AddressFields({
   const [nextKey, setNextKey] = useState(defaultAddresses.length);
 
   function addRow() {
-    setRows((current) => [...current, { ...EMPTY, key: nextKey }]);
+    setRows((current) => [...current, { ...EMPTY, id: null, key: nextKey }]);
     setNextKey((key) => key + 1);
   }
 
@@ -64,6 +74,10 @@ export default function AddressFields({
       {rows.map((row, index) => (
         <fieldset key={row.key} className="rounded-lg border border-border bg-card/40 p-4">
           <legend className="sr-only">Address {index + 1}</legend>
+
+          {/* Marks this row as one the API already stores, so a blank saved
+              address is not mistaken for an untouched new row and deleted. */}
+          <input type="hidden" name="address_id" value={row.id ?? ""} />
 
           <div className="mb-3 flex items-center justify-between gap-2">
             <label className="flex items-center gap-2 text-[13px] font-medium text-foreground">
